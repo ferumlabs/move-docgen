@@ -41,6 +41,8 @@ const MAX_SUBSECTIONS: usize = 6;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DocgenOptions {
+    pub module_name: Option<String>,
+
     /// The level where we start sectioning. Often markdown sections are rendered with
     /// unnecessary large section fonts, setting this value high reduces the size.
     pub section_level_start: usize,
@@ -99,6 +101,7 @@ pub struct DocgenOptions {
 impl Default for DocgenOptions {
     fn default() -> Self {
         Self {
+            module_name: None,
             section_level_start: 1,
             include_private_fun: true,
             include_specs: true,
@@ -236,9 +239,10 @@ impl<'env> Docgen<'env> {
         for (id, info) in self.infos.clone() {
             let m = self.env.get_module(id);
             if !info.is_included && m.is_target() {
-                self.gen_module(&m, &info);
-                let path = self.make_file_in_out_dir(&info.target_file);
-                self.output.push((path, self.writer.extract_result()));
+                if self.gen_module(&m, &info) {
+                    let path = self.make_file_in_out_dir(&info.target_file);
+                    self.output.push((path, self.writer.extract_result()));
+                }
             }
         }
 
@@ -504,7 +508,8 @@ impl<'env> Docgen<'env> {
 
     /// Generates documentation for a module. The result is written into the current code
     /// writer. Writer and other state is initialized if this module is standalone.
-    fn gen_module(&mut self, module_env: &ModuleEnv<'env>, info: &ModuleInfo) {
+    /// Returns true if content was actually written and if this file should be included.
+    fn gen_module(&mut self, module_env: &ModuleEnv<'env>, info: &ModuleInfo) -> bool {
         if !info.is_included {
             // (Re-) initialize state for this module.
             self.writer = CodeWriter::new(self.env.unknown_loc());
@@ -526,19 +531,32 @@ impl<'env> Docgen<'env> {
         }
 
         // Print header
-        self.section_header(
-            &format!(
-                "{} `{}`",
-                Self::module_modifier(module_env.get_name()),
-                module_env.get_name().display_full(module_env.symbol_pool())
-            ),
-            &info.label,
-        );
+        if self.options.module_name.is_some() {
+            self.section_header(
+                &format!(
+                    "{} `{}::{}`",
+                    Self::module_modifier(module_env.get_name()),
+                    self.options.module_name.as_ref().unwrap(),
+                    module_env.get_name().display(module_env.symbol_pool())
+                ),
+                &info.label,
+            );
+        }
+        else {
+            self.section_header(
+                &format!(
+                    "{} `{}`",
+                    Self::module_modifier(module_env.get_name()),
+                    module_env.get_name().display_full(module_env.symbol_pool())
+                ),
+                &info.label,
+            );
+        }
 
         self.increment_section_nest();
 
         // Document module overview.
-        self.doc_text(module_env.get_doc());
+        let module_overview_written = self.doc_text(module_env.get_doc()) > 0;
 
         // If this is a standalone doc, generate TOC header.
         let toc_label = if !info.is_included {
@@ -551,51 +569,52 @@ impl<'env> Docgen<'env> {
         // We currently only include modules used in bytecode -- including specs
         // creates a large usage list because of schema inclusion quickly pulling in
         // many modules.
-        self.begin_code();
-        let used_modules = module_env
-            .get_used_modules(/*include_specs*/ false)
-            .iter()
-            .filter(|id| **id != module_env.get_id())
-            .map(|id| {
-                module_env
-                    .env
-                    .get_module(*id)
-                    .get_name()
-                    .display_full(module_env.symbol_pool())
-                    .to_string()
-            })
-            .sorted();
-        for used_module in used_modules {
-            self.code_text(&format!("use {};", used_module));
-        }
-        self.end_code();
+        // self.begin_code();
+        // let used_modules = module_env
+        //     .get_used_modules(/*include_specs*/ false)
+        //     .iter()
+        //     .filter(|id| **id != module_env.get_id())
+        //     .map(|id| {
+        //         module_env
+        //             .env
+        //             .get_module(*id)
+        //             .get_name()
+        //             .display_full(module_env.symbol_pool())
+        //             .to_string()
+        //     })
+        //     .sorted();
+        // for used_module in used_modules {
+        //     self.code_text(&format!("use {};", used_module));
+        // }
+        // self.end_code();
 
-        if self.options.include_dep_diagrams {
-            let module_name = module_env.get_name().display(module_env.symbol_pool());
-            self.gen_dependency_diagram(module_env.get_id(), true);
-            self.begin_collapsed(&format!(
-                "Show all the modules that \"{}\" depends on directly or indirectly",
-                module_name
-            ));
-            self.image(&format!("img/{}_forward_dep.svg", module_name));
-            self.end_collapsed();
-
-            if !module_env.is_script_module() {
-                self.gen_dependency_diagram(module_env.get_id(), false);
-                self.begin_collapsed(&format!(
-                    "Show all the modules that depend on \"{}\" directly or indirectly",
-                    module_name
-                ));
-                self.image(&format!("img/{}_backward_dep.svg", module_name));
-                self.end_collapsed();
-            }
-        }
+        // if self.options.include_dep_diagrams {
+        //     let module_name = module_env.get_name().display(module_env.symbol_pool());
+        //     self.gen_dependency_diagram(module_env.get_id(), true);
+        //     self.begin_collapsed(&format!(
+        //         "Show all the modules that \"{}\" depends on directly or indirectly",
+        //         module_name
+        //     ));
+        //     self.image(&format!("img/{}_forward_dep.svg", module_name));
+        //     self.end_collapsed();
+        //
+        //     if !module_env.is_script_module() {
+        //         self.gen_dependency_diagram(module_env.get_id(), false);
+        //         self.begin_collapsed(&format!(
+        //             "Show all the modules that depend on \"{}\" directly or indirectly",
+        //             module_name
+        //         ));
+        //         self.image(&format!("img/{}_backward_dep.svg", module_name));
+        //         self.end_collapsed();
+        //     }
+        // }
 
         let spec_block_map = self.organize_spec_blocks(module_env);
 
         if !module_env.get_structs().count() > 0 {
             for s in module_env
                 .get_structs()
+                .filter(|s| !s.get_doc().is_empty())
                 .sorted_by(|a, b| Ord::cmp(&a.get_loc(), &b.get_loc()))
             {
                 self.gen_struct(&spec_block_map, &s);
@@ -610,6 +629,7 @@ impl<'env> Docgen<'env> {
         let funs = module_env
             .get_functions()
             .filter(|f| self.options.include_private_fun || f.is_exposed())
+            .filter(|f| !f.get_doc().is_empty())
             .sorted_by(|a, b| Ord::cmp(&a.get_loc(), &b.get_loc()))
             .collect_vec();
         if !funs.is_empty() {
@@ -638,9 +658,12 @@ impl<'env> Docgen<'env> {
         self.decrement_section_nest();
 
         // Generate table of contents if this is standalone.
-        if let Some(label) = toc_label {
-            self.gen_toc(label);
-        }
+        let toc_written = if let Some(label) = toc_label {
+            self.gen_toc(label)
+        } else {
+            false
+        };
+        module_overview_written || toc_written
     }
 
     /// Generate a static call diagram (.svg) starting from the given function.
@@ -831,7 +854,9 @@ impl<'env> Docgen<'env> {
     }
 
     /// Generate table of content and insert it at label.
-    fn gen_toc(&mut self, label: CodeWriterLabel) {
+    /// Returns if the TOC had any items in it.
+    fn gen_toc(&mut self, label: CodeWriterLabel) -> bool {
+        let mut toc_has_items = false;
         // We put this into a separate code writer and insert its content at the label.
         let writer = std::mem::replace(&mut self.writer, CodeWriter::new(self.env.unknown_loc()));
         {
@@ -842,6 +867,8 @@ impl<'env> Docgen<'env> {
                 .iter()
                 .filter(|(n, _)| *n > 0 && *n <= self.options.toc_depth)
             {
+                toc_has_items = true;
+
                 let n = *nest - 1;
                 while level < n {
                     self.begin_items();
@@ -865,6 +892,7 @@ impl<'env> Docgen<'env> {
                 .process_result(|s| writer.insert_at_label(label, s));
         }
         self.writer = writer;
+        toc_has_items
     }
 
     /// Generate an index of all modules and scripts in the context. This includes generated
@@ -893,9 +921,18 @@ impl<'env> Docgen<'env> {
 
     /// Generates documentation for all named constants.
     fn gen_named_constants(&self) {
+        let filtered_consts = self.current_module.
+            as_ref().
+            unwrap().
+            get_named_constants().
+            filter(|s| !s.get_doc().is_empty()).
+            collect_vec();
+        if filtered_consts.len() == 0 {
+            return;
+        }
         self.section_header("Constants", &self.label_for_section("Constants"));
         self.increment_section_nest();
-        for const_env in self.current_module.as_ref().unwrap().get_named_constants() {
+        for const_env in filtered_consts {
             self.label(&self.label_for_module_item(&const_env.module_env, const_env.get_name()));
             self.doc_text(const_env.get_doc());
             self.code_block(&self.named_constant_display(&const_env));
@@ -1406,7 +1443,8 @@ impl<'env> Docgen<'env> {
     }
 
     /// Outputs documentation text.
-    fn doc_text_general(&self, for_root: bool, text: &str) {
+    fn doc_text_general(&self, for_root: bool, text: &str) -> u8 {
+        let mut lines_written: u8 = 0;
         for line in self.decorate_text(text).lines() {
             let line = line.trim();
             if line.starts_with('#') {
@@ -1427,16 +1465,18 @@ impl<'env> Docgen<'env> {
             } else {
                 emitln!(self.writer, line)
             }
+            lines_written += 1;
         }
         // Always be sure to have an empty line at the end of block.
         emitln!(self.writer);
+        lines_written
     }
 
     fn doc_text_for_root(&self, text: &str) {
-        self.doc_text_general(true, text)
+        self.doc_text_general(true, text);
     }
 
-    fn doc_text(&self, text: &str) {
+    fn doc_text(&self, text: &str) -> u8 {
         self.doc_text_general(false, text)
     }
 

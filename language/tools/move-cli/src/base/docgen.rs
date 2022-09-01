@@ -11,6 +11,9 @@ use std::{fs, path::PathBuf};
 #[derive(Parser)]
 #[clap(name = "docgen")]
 pub struct Docgen {
+    #[clap(long = "module-name")]
+    pub module_name: Option<String>,
+
     /// The level where we start sectioning. Often markdown sections are rendered with
     /// unnecessary large section fonts, setting this value high reduces the size
     #[clap(long = "section-level-start", value_name = "HEADER_LEVEL")]
@@ -68,6 +71,9 @@ impl Docgen {
 
         let mut options = DocgenOptions::default();
 
+        if self.module_name.is_some() {
+            options.module_name = self.module_name;
+        }
         if !self.template.is_empty() {
             options.root_doc_templates = self.template;
         }
