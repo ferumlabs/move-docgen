@@ -1,7 +1,8 @@
+> :warning: This just has modifications to the move-docgen package to help generate ferum's documentation.
+
 
 [![License](https://img.shields.io/badge/license-Apache-green.svg)](LICENSE)
 [![Discord chat](https://img.shields.io/discord/903339070925721652.svg?logo=discord&style=flat-square)](https://discord.gg/M95qX3KnG8)
-
 
 # The Move Language
 
