@@ -530,28 +530,28 @@ impl<'env> Docgen<'env> {
                 .insert(svar.loc.clone(), svar.name);
         }
 
-        // Print header
-        if self.options.module_name.is_some() {
-            self.section_header(
-                &format!(
-                    "{} `{}::{}`",
-                    Self::module_modifier(module_env.get_name()),
-                    self.options.module_name.as_ref().unwrap(),
-                    module_env.get_name().display(module_env.symbol_pool())
-                ),
-                &info.label,
-            );
-        }
-        else {
-            self.section_header(
-                &format!(
-                    "{} `{}`",
-                    Self::module_modifier(module_env.get_name()),
-                    module_env.get_name().display_full(module_env.symbol_pool())
-                ),
-                &info.label,
-            );
-        }
+        // // Print header
+        // if self.options.module_name.is_some() {
+        //     self.section_header(
+        //         &format!(
+        //             "{} `{}::{}`",
+        //             Self::module_modifier(module_env.get_name()),
+        //             self.options.module_name.as_ref().unwrap(),
+        //             module_env.get_name().display(module_env.symbol_pool())
+        //         ),
+        //         &info.label,
+        //     );
+        // }
+        // else {
+        //     self.section_header(
+        //         &format!(
+        //             "{} `{}`",
+        //             Self::module_modifier(module_env.get_name()),
+        //             module_env.get_name().display_full(module_env.symbol_pool())
+        //         ),
+        //         &info.label,
+        //     );
+        // }
 
         self.increment_section_nest();
 
@@ -633,9 +633,12 @@ impl<'env> Docgen<'env> {
             .sorted_by(|a, b| Ord::cmp(&a.get_loc(), &b.get_loc()))
             .collect_vec();
         if !funs.is_empty() {
+            self.section_header("Functions", &self.label_for_section("Functions"));
+            self.increment_section_nest();
             for f in funs {
                 self.gen_function(&spec_block_map, &f);
             }
+            self.decrement_section_nest();
         }
 
         if !self.options.specs_inlined {
@@ -658,12 +661,16 @@ impl<'env> Docgen<'env> {
         self.decrement_section_nest();
 
         // Generate table of contents if this is standalone.
-        let toc_written = if let Some(label) = toc_label {
-            self.gen_toc(label)
+        let toc_has_content = if let Some(label) = toc_label {
+            self.toc.borrow().iter()
+                .filter(|(n, _)| *n > 0 && *n <= self.options.toc_depth)
+                .collect_vec()
+                .len() > 0
+            // self.gen_toc(label)
         } else {
             false
         };
-        module_overview_written || toc_written
+        module_overview_written || toc_has_content
     }
 
     /// Generate a static call diagram (.svg) starting from the given function.
@@ -933,6 +940,8 @@ impl<'env> Docgen<'env> {
         self.section_header("Constants", &self.label_for_section("Constants"));
         self.increment_section_nest();
         for const_env in filtered_consts {
+            let name = format!("{}", self.name_string(const_env.get_name()));
+            self.section_header(&name, &self.label_for_section(&name));
             self.label(&self.label_for_module_item(&const_env.module_env, const_env.get_name()));
             self.doc_text(const_env.get_doc());
             self.code_block(&self.named_constant_display(&const_env));
@@ -1482,7 +1491,7 @@ impl<'env> Docgen<'env> {
 
     /// Makes a label from a string.
     fn make_label_from_str(&self, s: &str) -> String {
-        format!("@{}", s.replace(' ', "_"))
+        format!("@{}", s.replace(' ', "-"))
     }
 
     /// Decorates documentation text, identifying code fragments and decorating them
@@ -1686,11 +1695,15 @@ impl<'env> Docgen<'env> {
 
     /// Create label for a module.
     fn make_label_for_module(&self, module_env: &ModuleEnv<'_>) -> String {
-        module_env
-            .get_name()
-            .display_full(self.env.symbol_pool())
-            .to_string()
-            .replace("::", "_")
+        format!(
+            "{}_{}",
+            self.options.module_name.as_ref().unwrap_or(&String::new()),
+            module_env
+                .get_name()
+                .display(self.env.symbol_pool())
+                .to_string()
+                .replace("::", "_")
+        )
     }
 
     /// Return the label for a module.
@@ -1734,7 +1747,7 @@ impl<'env> Docgen<'env> {
     fn label_for_section(&self, title: &str) -> String {
         let counter = *self.label_counter.borrow();
         *self.label_counter.borrow_mut() += 1;
-        self.make_label_from_str(&format!("{} {}", title, counter))
+        self.make_label_from_str(&title.to_ascii_lowercase().replace(" ", "-"))
     }
 
     /// Shortcut for code_block in a module context.
