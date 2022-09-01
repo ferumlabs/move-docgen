@@ -2992,7 +2992,7 @@ dependencies = [
 
 [[package]]
 name = "move-cli"
-version = "0.1.0"
+version = "0.1.0-ferum"
 dependencies = [
  "anyhow",
  "bcs",
